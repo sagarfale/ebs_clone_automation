@@ -1,0 +1,17 @@
+F_CREATION_OF_LOGDIR() { 
+    for i in $(cat "${WORKFLOW}/${TARGET_INSTANCE_NAME}-cloning-task-list"); do 
+        if [[ $i == \#* ]]; then
+            continue # skip this directory
+        fi
+        
+        mkdir -p "${REFRESH_DIR}/log/${TARGET_INSTANCE_NAME}/F_${i}"
+        TEMP_VAR="${REFRESH_DIR}/log/${TARGET_INSTANCE_NAME}/F_${i}"
+        
+        ##checking if the directory exists 
+        if [ -d "${REFRESH_DIR}/log/${TARGET_INSTANCE_NAME}/F_${i}" ]; then 
+            F_ECHO "${TEMP_VAR} Directory exists."
+        else 
+            F_ECHO "${TEMP_VAR}Directory does not exist." && exit 1
+        fi
+    done
+}

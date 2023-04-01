@@ -1,0 +1,22 @@
+F_UPDATE_CLONE_PROCESSING_STATUS()
+{
+   F_ECHO "updating the CLONE_PROCESSING_STATUS table ..." 
+   F_ECHO "update system.CLONE_PROCESSING_STATUS set CURRENT_STATUS='$1', FINAL_STATUS='$2', logfile='${3}' where REFRESH_TASK_NAME='$4';"
+   DB_CONN_SYSTEM << EOF >> ${LOGFILE} 2>&1
+   update system.CLONE_PROCESSING_STATUS set CURRENT_STATUS='$1', FINAL_STATUS='$2', logfile='${3}' where REFRESH_TASK_NAME='$4';
+   commit;
+EOF
+#echo "Current status is : $2"
+if [ "$2" = "FAILED" ]; then  
+    F_CHECKING_CLONING_STATUS
+    echo "" 
+    echo -e "\033[31m*** Failed and Errored Tasks and Need Attention...\033[0m"
+    echo -e "\033[31m*** $4 has been Failed ..\033[0m"
+    echo -e "\033[31mLogfile Name : $3\033[0m"
+    echo -e "\033[33mDebug Messege : ORA-XXXX Errors..\033[0m"
+    echo "$5"
+    #F_CHECKING_CLONING_STATUS_TABULAR
+    #F_UPDATE_CLONE_PROCESSING_STATUS
+    exit 1 
+fi
+}

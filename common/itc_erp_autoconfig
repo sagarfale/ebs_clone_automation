@@ -1,0 +1,154 @@
+#!/bin/bash
+##################################################
+##
+##  26-Mar-2023  Sagar Fale - modifications in progress
+##
+##  This scripts performs Autoconfig for database and application depending finction called
+##
+#################################################
+
+#. /scripts/clone/conf/${1}_refresh.env
+
+function F_APPS_AUTCONFIG
+{
+  INITIALIZE_TASK "$FUNCNAME"
+  F_ECHO "In Fucntion f_app_autoconfig"
+  rm -f $LOGFILE_STAGE_NAME >>$LOGFILE 2>>$LOGFILE
+  F_ECHO "Running Autoconfig on AppTier"
+  F_ECHO "You may monitor the progress in $LOGFILE_STAGE_NAME"
+  F_ECHO "script=$AUTOCONFIG_SCRIPT"
+
+  F_ECHO "${ADCONFIG_SCRIPT} contextfile=${1} appspass=$APPS_PWD"
+  ${ADCONFIG_SCRIPT} contextfile=${1} appspass=$APPS_PWD >> $LOGFILE_STAGE_NAME 2>>$LOGFILE_STAGE_NAME
+  cat $LOGFILE_STAGE_NAME >> $LOGFILE
+  grep -i "AutoConfig completed successfully" $LOGFILE_STAGE_NAME >>$LOGFILE 2>>$LOGFILE
+  if [ "$?" = "0" ]
+  then 
+     F_ECHO "SUCCESS: Autoconfig  is completed" 
+     F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCECSS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+  else
+     F_ECHO "ERROR: Autoconfig failed ."
+     F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+     exit
+  fi
+
+  F_ECHO "Exiting f_app_autoconfig"
+}
+
+
+
+function F_DB_AUTCONFIG
+{
+  INITIALIZE_TASK "$FUNCNAME"
+  F_ECHO "In Fucntion F_DB_AUTCONFIG"
+  F_ECHO "Running Autoconfig on DBTier"
+  F_ECHO "You may monitor the progress in $LOGFILE_STAGE_NAME"
+
+  ${DB_ORACLE_HOME}/appsutil/bin/adconfig.sh contextfile=${DB_ORACLE_HOME}/appsutil/${CONTEXT_NAME_DB}.xml appspass=$APPS_PWD >> $LOGFILE_STAGE_NAME 2>>$LOGFILE_STAGE_NAME
+  cat $LOGFILE_STAGE_NAME >> $LOGFILE
+  grep -i "AutoConfig completed successfully" $LOGFILE_STAGE_NAME >>$LOGFILE 2>>$LOGFILE
+  if [ "$?" = "0" ]
+  then
+     F_ECHO "SUCCESS: Autoconfig on DB tier is completed"
+     F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCECSS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+  else
+     F_ECHO "ERROR: Autoconfig failed on db tier."
+     F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+     exit
+  fi
+
+  F_ECHO "Exiting F_DB_AUTCONFIG"
+}
+
+
+
+##Main
+
+:<<COMMENT
+F_ECHO "Starting $0 with arguments $@"
+
+SUCCESS_FILE=$AUTOCONFIG_SUCCESS
+APPS_PWD=`GetPassword APPS`
+#F_ECHO "2:$APPS_PWD"
+
+f_check_run_fs
+
+if [ "$#" = "1" ]
+then 
+   F_ECHO "Executing Autoconfig on DB node"
+   F_DB_AUTCONFIG
+
+   F_ECHO "Executing Autoconfig on CM/APP nodes."
+   COUNTER=1
+   for NX in $NODE_XML
+   do
+      NODE=`echo $NX |awk -F: '{print $1}'`
+      XML=`echo $NX |awk -F: '{print $2}'`
+      ENV=`echo $NX |awk -F: '{print $3}'`
+      
+      F_ECHO "Command: $SSH ${APUSER}@$NODE $AUTOCONFIG_SCRIPT $LINSTANCE $XML $NODE $ENV $COUNTER"
+      $SSH ${APUSER}@$NODE $AUTOCONFIG_SCRIPT $LINSTANCE $XML $NODE $ENV $COUNTER >>$LOGFILE 2>>$LOGFILE
+    
+      if [ -f ${TEMP_LOG_LOC}/${NODE}_AUTOCONFIG_SUCCESS ] 
+      then
+          F_ECHO "SUCCESS: Completed ${APP_CONFIG} on node: $NODE"
+          COUNTER=`expr $COUNTER + 1`
+      else
+          F_ECHO "ERROR: ${APP_CONFIG} Failed on node: $NODE"
+          exit
+      fi 
+    done
+    
+    F_ECHO "SUCCESS: ${APP_CONFIG} completed on DB and APP/CM nodes."
+    touch $SUCCESS_FILE
+
+elif  [ "$#" = "5" ]
+then
+    NODE=$3 
+    XML=$2
+    ENV=$4
+    NODE_NUM=$5
+
+    F_ECHO "Updating sitename in run and path xml files"
+    eval "RUN_XML=\$CM_NODE${NODE_NUM}_RUN_XML"
+    eval "PATCH_XML=\$CM_NODE${NODE_NUM}_PATCH_XML"
+
+    DT=`date '+%F'`
+    SITENAME="$INSTANCE CLONE FROM $SOURCE_INSTANCE AS OF $DT"
+    F_ECHO "Site name to be updated: $SITENAME"
+
+    sed -i 's;.*oa_site_name.*;      <oa_site_name oa_var="s_sitename">'"${SITENAME}"'</oa_site_name>;g' $RUN_XML
+    sed -i 's;.*oa_site_name.*;      <oa_site_name oa_var="s_sitename">'"${SITENAME}"'</oa_site_name>;g' $PATCH_XML
+
+    F_ECHO "Sitename in Run xml $RUN_XML"
+    grep -i sitename $RUN_XML >> $LOGFILE 2>>$LOGFILE
+    F_ECHO "Sitename in PATCH xml $PATCH_XML"
+    grep -i sitename $PATCH_XML >> $LOGFILE 2>>$LOGFILE
+
+
+
+    F_ECHO "Starting autoconfig on $NODE using $XML"
+
+    rm -f ${TEMP_LOG_LOC}/${NODE}_AUTOCONFIG_SUCCESS >>$LOGFILE 2>>$LOGFILE
+    if [ "$?" != "0" ]
+    then
+        F_ECHO "ERROR: Not able to delete previous success file ${TEMP_LOG_LOC}/${NODE}_AUTOCONFIG_SUCCESS"
+        exit
+    fi 
+
+    . $ENV
+
+    f_app_autoconfig $XML
+
+    F_ECHO "Creating successfile."
+    touch ${TEMP_LOG_LOC}/${NODE}_AUTOCONFIG_SUCCESS  >>$LOGFILE 2>>$LOGFILE
+    if [ "$?" != "0" ]
+    then
+      F_ECHO "ERROR: Not able to create success flag file ${ORUSER}@${DB_FULL_NAME}:${TEMP_LOG_LOC}/${NODE}_AUTOCONFIG_SUCCESS"
+      F_ECHO "Exiting $0"
+    fi
+else
+   F_ECHO "ERROR: Wrong Number of Arguments."
+fi
+COMMENT
+exit

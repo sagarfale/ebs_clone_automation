@@ -1,0 +1,29 @@
+F_CHECKS_SYSTEM_CONN_STATUS()
+{
+    DB_MODE=`DB_CONN_SYSTEM <<EOF
+           set feedback off pause off pagesize 0 verify off linesize 500 term off
+           col REFRESH_TASK_NAME for a50
+           col FINAL_STATUS for a10
+           set pages 80
+           set head off
+           set line 120
+           set echo off
+           SELECT OPEN_MODE FROM V\\$DATABASE;
+EOF
+`
+echo $DB_MODE
+
+DB_MODE="$(echo "$DB_MODE" | grep -v '^$')"
+
+echo $DB_MODE
+        if [[ -z "$DB_MODE" ]]; then
+          echo "DB_MODE is null or blank. Exiting.. Check EBS SYSTEM Password and connectivity"
+          exit 1
+        elif [[ "$DB_MODE" == "READ WRITE" ]]; then
+          echo "Success!"
+        else
+          echo $DB_MODE
+          echo "Failure!.. Exiting.. Check EBS APPS Password and connectivity"
+          exit 1
+        fi
+}

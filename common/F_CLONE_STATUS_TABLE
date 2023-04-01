@@ -1,0 +1,65 @@
+F_CLONE_STATUS_TABLE()
+{
+F_ECHO "calling F_CLONE_STATUS_TABLE"
+output=`DB_CONN_SYSTEM <<EOF
+   set feedback off pause off pagesize 0 verify off linesize 500 term off
+   set pages 80
+   set head off
+   set line 120
+   set echo off
+   SELECT table_name FROM dba_tables WHERE table_name='CLONE_PROCESSING_STATUS' AND owner='SYSTEM';
+EOF
+`
+   
+output=`echo $output|  tr -d '[:space:]'`
+#echo "output is $output"
+if [ "$output" = "CLONE_PROCESSING_STATUS" ]; then
+  #echo "Table CLONE_PROCESSING_STATUS exists in the database."
+  F_ECHO "Table CLONE_PROCESSING_STATUS exists in the database."
+else
+  F_ECHO "Table CLONE_PROCESSING_STATUS does not exist in the database."
+  F_ECHO "Creating CLONE_PROCESSING_STATUS table in database in SYSTEM Schema.."
+  echo "CREATE TABLE CLONE_PROCESSING_STATUS (TASK_ID int, REFRESH_TASK_NAME VARCHAR2(100),  CURRENT_STATUS VARCHAR2(10), FINAL_STATUS VARCHAR2(10), LOGFILE VARCHAR2(200));" > ${REFRESH_DIR}/workflow/${TARGET_INSTANCE_NAME}-cloning-process-table.sql
+  # Loop through the array and print each item with its index
+  #ls -l  ${REFRESH_DIR}/workflow/${TARGET_INSTANCE_NAME}-cloning-task-list
+  IFS=$'\n' read -d '' -r -a list < ${REFRESH_DIR}/workflow/${TARGET_INSTANCE_NAME}-cloning-task-list
+
+    # Loop through the array and print each item with its index
+    for i in "${!list[@]}"
+    do
+      #echo "$((i+1)): ${list[$i]}"
+      if [[ ${list[$i]} != \#* ]]; then
+        echo "INSERT INTO CLONE_PROCESSING_STATUS (TASK_ID,REFRESH_TASK_NAME, CURRENT_STATUS, FINAL_STATUS, LOGFILE) VALUES ( $((i+1)),'${list[$i]}',NULL,NULL,NULL);" >>  ${REFRESH_DIR}/workflow/${TARGET_INSTANCE_NAME}-cloning-process-table.sql
+      fi
+    done
+    echo "commit;" >>  ${REFRESH_DIR}/workflow/${TARGET_INSTANCE_NAME}-cloning-process-table.sql
+    echo "exit;" >>  ${REFRESH_DIR}/workflow/${TARGET_INSTANCE_NAME}-cloning-process-table.sql
+    find ${REFRESH_DIR} -type f -exec sed -i 's/\r//g' {} \;
+    #echo "creating a table "
+    LOGFILE_STAGE_NAME=$(LOGFILE_STAGE "$FUNCNAME")
+    DB_CONN_SYSTEM @${REFRESH_DIR}/workflow/${TARGET_INSTANCE_NAME}-cloning-process-table.sql  >> $LOGFILE_STAGE_NAME 2>> $LOGFILE_STAGE_NAME
+
+    output=`DB_CONN_SYSTEM <<EOF
+           set feedback off pause off pagesize 0 verify off linesize 500 term off
+           set pages 80
+           set head off
+           set line 120
+           set echo off
+           SELECT table_name FROM dba_tables WHERE table_name='CLONE_PROCESSING_STATUS' AND owner='SYSTEM';
+EOF
+`
+    output=`echo $output|  tr -d '[:space:]'`
+    #echo "output is $output"
+    if [ "$output" = "CLONE_PROCESSING_STATUS" ]; then
+      #echo "Table CLONE_PROCESSING_STATUS exists in the database."
+        F_ECHO "***  $FUNCNAME .. SUCCESS"
+        F_ECHO_STAGE "*** Table CLONE_PROCESSING_STATUS exists in the database." 
+        F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "CLONE_STATUS_TABLE" "${DEBUG_MESSEGE}"
+    else
+        F_ECHO "***  $FUNCNAME .. SUCCESS"
+        F_ECHO_STAGE "*** Table CLONE_PROCESSING_STATUS NOT exists in the database." 
+        DEBUG_MESSEGE="Table CLONE_PROCESSING_STATUS NOT exists in the database."
+        F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED"  "$LOGFILE_STAGE_NAME" "CLONE_STATUS_TABLE" "${DEBUG_MESSEGE}"
+    fi
+fi
+}

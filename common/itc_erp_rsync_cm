@@ -1,0 +1,109 @@
+#!/bin/bash
+####################################
+##
+##
+## 19-JUN-2012  Suneel T 
+###Initial Scripts for syncing the directories 
+## Arguments:
+##  1: Instance name [ for sourcing config file]
+##  2: Source server name
+##  3: Directory list [ SourceDir1:TargetDir1-SourceDir2:TargetDir2 ] 
+##  4: Flag File Server
+##  5: Flag File name
+##
+####################################
+
+#Main
+
+. /shared/scripts/clone/conf/${1}_refresh.env
+
+f_echo "Starting $0 on `hostname` at `date`"
+
+   rm -f ${TEMP_LOG_LOC}/${3} >> $LOG_FILE 2>>$LOG_FILE
+   if [ "$?" != "0" ]
+   then
+      f_echo "ERROR: Not able to delete flag file ${TEMP_LOG_LOC}/${3}"
+      f_echo "Exiting $0"
+   fi
+
+SOURCE=$2
+
+f_check_run_fs
+
+DIR_LIST=`echo $CM_DIR_RSYNC | sed 's/-/ /g'`
+f_echo "Source: $SOURCE"
+#f_echo "Target: $TARGET"
+f_echo "Directory-Mapping: $DIR_LIST"
+
+
+f_echo "Starting Rsync from $SOURCE"
+
+for i in $DIR_LIST
+do
+   f_echo "$i"
+   SOURCEDIR=`echo $i | awk -F: '{print $1}'`
+   TARGETDIR=`echo $i | awk -F: '{print $2}'`
+   EXCLUDE=`echo $i | awk -F: '{print $3}'`
+
+
+   ERROR="N"
+   echo "" > $TEMP_FILE
+   if [ "$?" != "0" ]
+   then
+       f_echo "ERROR: clearing the log file."
+       f_sendmail
+       exit
+   fi
+
+   if [ -z $EXCLUDE ]
+   then
+      f_echo "Preparing the RSYNC command without EXCLUDE"
+      #CMD="/usr/bin/rsync -avlrtp --stats --rsync-path=/usr/bin/rsync --rsh=ssh ${SOURCE}:${SOURCEDIR}/* ${TARGETDIR}"
+      CMD="/usr/bin/rsync -avlrtp --delete --stats --rsync-path=/usr/bin/rsync --rsh=ssh ${SOURCE}:${SOURCEDIR}/ ${TARGETDIR}/"
+      f_echo "$CMD"
+      f_echo "Executing the above command"
+      f_echo "You may monitor the progress in file $TEMP_FILE"
+      $CMD >> $TEMP_FILE 2>> $TEMP_FILE
+      ERRORC=$?
+      if [ "${ERRORC}" = "0" -o "${ERRORC}" = "24" ]
+      then
+         cat $TEMP_FILE >> $LOG_FILE
+         f_echo "SUCCESS: Rsync Successful."
+      else
+       f_echo "Error Code: $ERRORC $?"
+       cat $TEMP_FILE >> $LOG_FILE
+       f_echo "ERROR: RSYNC failed for $SOURCE:$SOURCEDIR TO $TARGETDIR"
+       exit
+      fi
+   else
+      f_echo "Preparing the RSYNC command with EXCLUDE"
+      CMD="/usr/bin/rsync -avlrtp --delete --stats --rsync-path=/usr/bin/rsync --rsh=ssh --exclude='$EXCLUDE' --exclude='/clone/FMW/.nfs0000000004d4658a0003d88a' ${SOURCE}:${SOURCEDIR}/ ${TARGETDIR}/"
+      f_echo "$CMD"
+      f_echo "Executing the above command"
+      f_echo "You may monitor the progress in file $TEMP_FILE"
+      $CMD >> $TEMP_FILE 2>> $TEMP_FILE
+      ERRORC=$?
+      if [ "${ERRORC}" = "0" -o "${ERRORC}" = "24" ]
+      then
+         cat $TEMP_FILE >> $LOG_FILE
+         f_echo "SUCCESS: Rsync Successful."
+      else
+       f_echo "Error Code: $ERRORC $?" 
+       cat $TEMP_FILE >> $LOG_FILE
+       f_echo "ERROR: RSYNC failed for $SOURCE:$SOURCEDIR TO $TARGETDIR"
+       exit
+      fi
+    fi
+    f_echo "SUCCESS: Copy from $SOURCE:$SOURCEDIR TO $TARGETDIR is completed."
+done
+
+rm -f $TEMP_FILE
+
+   touch  ${TEMP_LOG_LOC}/${3} >> $LOG_FILE 2>>$LOG_FILE
+   if [ "$?" != "0" ]
+   then
+      f_echo "ERROR: Not able to create success flag file ${TEMP_LOG_LOC}/${3}"
+      f_echo "Exiting $0"
+   fi
+
+exit

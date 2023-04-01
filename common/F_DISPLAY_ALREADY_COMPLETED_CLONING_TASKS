@@ -1,0 +1,14 @@
+F_DISPLAY_ALREADY_COMPLETED_CLONING_TASKS()
+{
+echo "*** DISPLAY ALREADY COMPLETED CLONING TASKS "
+DB_CONN_SYSTEM <<EOF
+           set feedback off pause off pagesize 0 verify off linesize 500 term off
+           col REFRESH_TASK_NAME for a50
+           col FINAL_STATUS for a10
+           set pages 80
+           set head off
+           set line 120
+           set echo off
+    SELECT REFRESH_TASK_NAME||' '||FINAL_STATUS FROM CLONE_PROCESSING_STATUS WHERE REFRESH_TASK_NAME='${i}' and FINAL_STATUS in ('SUCCESS','SKIPPED') ;
+EOF
+}

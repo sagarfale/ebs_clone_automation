@@ -1,0 +1,80 @@
+#!/bin/bash
+##################################################
+##
+##  19-Sep-2012  Suneel Tirunamala Initial Script
+##
+##  This scripts performs the configuration steps for applications.
+##
+#################################################
+
+. /shared/scripts/clone/conf/${1}_refresh.env
+
+function f_srv_ctrl
+{
+  f_echo "In function f_srv_ctrl"
+  f_echo "Preparing temporary script "
+  PERL_SCRIPT=${TEMP_LOG_LOC}/perl_temp.pl
+  rm -f $PERL_SCRIPT $TEMP_FILE
+  if [ "$?" != "0" ]
+  then
+    f_echo "ERROR: Not able to delete temporary perl script $PERL_SCRIPT or $TEMP_FILE"
+    exit;
+  fi
+
+  cat ${COMMONFILES}/perl_sub.pl  >> $PERL_SCRIPT
+  echo "runPipedCmd(\"${1} $2 $3 \", \"$WL_PASSWD\" , \"$APPS_PWD\" );" >> $PERL_SCRIPT
+
+  chmod 755 $PERL_SCRIPT
+  cat $PERL_SCRIPT >> $LOG_FILE 2>>$LOG_FILE
+
+  f_echo "Executing $1 $2 $3"
+  f_echo "You may monitor the progress in $TEMP_FILE"
+
+  /usr/bin/perl $PERL_SCRIPT  >>$TEMP_FILE 2>>$TEMP_FILE
+
+  cat $TEMP_FILE >> $LOG_FILE
+  egrep -i 'exiting with status 0|The AdminServer is already shutdown|The Node Manager is already shutdown' $TEMP_FILE >>$LOG_FILE 2>>$LOG_FILE
+  if [ "$?" = "0" ]
+  then
+         f_echo "SUCCESS: Server Action completed  Successfully"
+  else
+         f_echo "ERROR: Server action not completed."
+         exit
+  fi
+
+  f_echo "Existing function f_srv_ctrl"
+}
+
+##Main
+
+f_echo "Starting $0 with arguments $@"
+
+rm -f $STOP_ADMIN_SUCCESS
+if [ "$?" != "0" ]
+then
+   f_echo "ERROR: Not able to delete SUCCESS file $STOP_ADMIN_SUCCESS"
+   exit;
+fi
+
+f_check_run_fs
+
+APPS_PWD=`GetPassword APPS $SOURCE_INSTANCE`
+WL_PASSWD=`GetPassword WEBLOGIC $SOURCE_INSTANCE`
+
+f_echo "Stopping Admin server on Patch File system"
+. $CM_NODE1_PATCH_ENV_FILE
+f_srv_ctrl $PATCH_ADMIN_START_SCRIPT stop -nopromptmsg
+
+f_echo "Stop Node Manager in Patch File system"
+f_srv_ctrl $PATCH_NODEMGR_SCR stop 
+
+f_echo "Stopping Admin Server on Run File System"
+. $CM_NODE1_ENV_FILE
+f_srv_ctrl $ADMIN_START_SCRIPT stop -nopromptmsg
+
+f_echo "Stop Node Manager in Run File system"
+f_srv_ctrl $NODEMGR_SCRIPT stop
+
+f_echo "SUCCESS: Stoppped Admin Server ."
+touch $STOP_ADMIN_SUCCESS
+

@@ -1,0 +1,159 @@
+#!/bin/bash
+##################################################
+##
+##  19-Sep-2012  Suneel Tirunamala Initial Script
+##
+##  This scripts updates the data sources with the new APPS  password.
+##
+#################################################
+
+. /shared/scripts/clone/conf/${1}_refresh.env
+
+##Main
+
+function f_admin
+{
+  f_echo "In function f_admin"
+  f_echo "Preparing temporary script "
+  PERL_SCRIPT=${TEMP_LOG_LOC}/perl_temp.pl
+  rm -f $PERL_SCRIPT $TEMP_FILE
+  if [ "$?" != "0" ]
+  then
+    f_echo "ERROR: Not able to delete temporary perl script $PERL_SCRIPT or $TEMP_FILE"
+    exit;
+  fi
+
+  cat ${COMMONFILES}/perl_sub.pl  >> $PERL_SCRIPT
+  echo "runPipedCmd(\"${ADMIN_START_SCRIPT} $1\", \"$WL_PASSWD\" , \"$APPS_PWD\" );" >> $PERL_SCRIPT
+
+  chmod 755 $PERL_SCRIPT
+  cat $PERL_SCRIPT >> $LOG_FILE 2>>$LOG_FILE
+
+  f_echo "Executing the script"
+  f_echo "You may monitor the progress in $TEMP_FILE"
+
+  /usr/bin/perl $PERL_SCRIPT  >>$TEMP_FILE 2>>$TEMP_FILE
+
+  cat $TEMP_FILE >> $LOG_FILE
+  grep -i "exiting with status 0" $TEMP_FILE >>$LOG_FILE 2>>$LOG_FILE
+  if [ "$?" = "0" ]
+  then
+         f_echo "SUCCESS: Completed Successfully"
+  else
+         f_echo "ERROR: Script errored"
+         exit
+  fi
+
+  f_echo "Existing function f_admin"
+}
+
+
+function f_change_ds
+{
+f_echo "in f_change_ds for changing datasource for : $1"
+TEMP_SCRIPT=${TEMP_LOG_LOC}/updateAPPSDSpwd.py
+rm -f $TEMP_SCRIPT
+if [ "$?" = "0" ]
+then
+   f_echo "SUCCESS:Temporary script $TEMP_SCRIPT Deleted successfully"
+else
+  f_echo "ERROR: Not able to delete the temporty script $TEMP_SCRIPT"
+  f_echo "ERROR: Exiting the script"
+  exit;
+fi
+
+TEMP_OUTPUT=${TEMP_LOG_LOC}/py_out
+rm -f $TEMP_OUTPUT
+if [ "$?" != "0" ]
+then
+  f_echo "ERROR: Not able to delete the temporty script $TEMP_OUTPUT"
+  f_echo "ERROR: Exiting the script"
+  exit;
+fi
+
+
+#f_echo "Preparing the Python script to Change Datasource $1 password"
+#echo "username = 'weblogic' " >> $TEMP_SCRIPT
+#echo "password = '${WL_PASSWD}' " >> $TEMP_SCRIPT
+#echo "URL='t3://$CM_NODE1:$ADMIN_PORT' " >> $TEMP_SCRIPT
+#echo "connect(username,password,URL) " >> $TEMP_SCRIPT
+#echo "edit() " >> $TEMP_SCRIPT
+#echo "startEdit() " >> $TEMP_SCRIPT
+#echo "en = encrypt('${APPS_PWD}','$FMW_HOME/user_projects/domains/EBS_domain_${INSTANCE}') " >> $TEMP_SCRIPT
+#echo "dsName = '${1}' " >> $TEMP_SCRIPT
+#echo "cd('/JDBCSystemResources/'+dsName+'/JDBCResource/'+dsName+'/JDBCDriverParams/'+dsName) " >> $TEMP_SCRIPT
+#echo "set('PasswordEncrypted',en) " >> $TEMP_SCRIPT
+#echo "print ('') " >> $TEMP_SCRIPT
+#echo "print ('') " >> $TEMP_SCRIPT
+#echo "save() " >> $TEMP_SCRIPT
+#echo "activate() " >> $TEMP_SCRIPT
+
+#cat $TEMP_SCRIPT >> $LOG_FILE 2>>$LOG_FILE
+
+f_echo "Executung the python script"
+#f_echo "java -cp $FMW_HOME/wlserver_10.3/server/lib/weblogic.jar weblogic.WLST $TEMP_SCRIPT"
+#java -cp $FMW_HOME/wlserver_10.3/server/lib/weblogic.jar weblogic.WLST $TEMP_SCRIPT >> $TEMP_OUTPUT  2>> $TEMP_OUTPUT;
+#f_echo "java -cp $FMW_HOME/wlserver_10.3/server/lib/weblogic.jar weblogic.WLST $TEMP_SCRIPT"
+#PERL_DUAL_SCRIPT=${TEMP_LOG_LOC}/perl_temp.pl
+#echo "perl $FND_TOP/patch/115/bin/txkManageDBConnectionPool.pl << EOF
+#"updateDSPassword"
+#"$CONTEXT_FILE"
+#"$WL_PASSWD"
+#"$APPS_PWD"
+#EOF " >> $PERL_DUAL_SCRIPT
+#{ echo "updateDSPassword" ;echo "$CONTEXT_FILE" ; echo "${WL_PASSWD}" ; echo "${APPS_PWD"; }| perl $FND_TOP/patch/115/bin/txkManageDBConnectionPool.pl >> $LOG_FILE 2>>$LOG_FILE
+#cat $TEMP_OUTPUT >> $LOG_FILE 2>>$LOG_FILE
+{ echo "updateDSPassword" ;echo "${CONTEXT_FILE}" ; echo "${WL_PASSWD}" ; echo "${APPS_PWD}"; }| perl $FND_TOP/patch/115/bin/txkManageDBConnectionPool.pl >> $TEMP_FILE 2>>$TEMP_FILE
+#chmod 755 $PERL_DUAL_SCRIPT
+#cat $PERL_DUAL_SCRIPT >> $LOG_FILE 2>>$LOG_FILE
+f_echo "Running EBSDataSource Password Change"
+f_echo "You may monitor the progress in $TEMP_FILE"
+
+#perl $PERL_DUAL_SCRIPT >>$TEMP_FILE 2>>$TEMP_FILE
+#grep -i "Activation completed" $TEMP_FILE >> $LOG_FILE 2>>$LOG_FILE
+grep -i "Domain Update successful" $TEMP_FILE >> $LOG_FILE 2>>$LOG_FILE
+if [ "$?" != "0" ];then
+ f_echo "ERROR: Failed to change Datasource password after APPS password change ";
+ f_echo "ERROR: If this needs to be re-run, then stop the ADMIN SERVER and re run the script"
+ exit 1;
+else
+ f_echo "Python script completed successfully"
+fi
+
+}
+
+#Main
+f_echo "Starting $0 with arguments $@"
+
+rm -f $UPD_DATASOURCES_SUCCESS
+if [ "$?" != "0" ]
+then
+   f_echo "ERROR: Not able to delete SUCCESS file $UPD_DATASOURCES_SUCCESS"
+   exit;
+fi
+
+
+APPS_PWD=`GetPassword APPS`
+WL_PASSWD=`GetPassword WEBLOGIC`
+
+f_check_run_fs
+
+
+f_echo "Starting Admin Server on Run File System"
+
+. $CM_NODE1_ENV_FILE
+
+f_admin start
+
+f_change_ds EBSDataSource
+#f_change_ds OAEADatasource
+
+
+f_echo "Stop the Admin Server"
+f_admin stop
+
+f_echo "SUCCESS: Updated the data sources with the new APPS password"
+touch $UPD_DATASOURCES_SUCCESS
+sleep 5
+
+exit

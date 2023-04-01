@@ -1,0 +1,67 @@
+F_CHECKING_CLONING_STATUS()
+{
+clear
+echo "*** Display CLONE_STATUS for ${TARGET_INSTANCE_NAME}"
+   output=`DB_CONN_SYSTEM <<EOF
+      set feedback off pause off pagesize 0 verify off linesize 500 term off
+      set pages 80
+      set head off
+      set line 100
+      set echo off
+      SELECT TABLE_NAME FROM DBA_TABLES WHERE table_name='CLONE_PROCESSING_STATUS' AND owner='SYSTEM';
+EOF
+`
+output=`echo $output|  tr -d '[:space:]'`
+echo -e "\033[97m*** Completed Tasks: \033[0m"
+      if [ "$output" = "CLONE_PROCESSING_STATUS" ]; then
+        DB_CONN_SYSTEM <<EOF > /tmp/success.tasks
+        set feedback off pause off pagesize 0 verify off linesize 500 term off
+        col REFRESH_TASK_NAME for a30
+        col CURRENT_STATUS FOR A15
+        col CURRENT_STATUS FOR A15
+        col LOGFILE  for a75
+        set pages 80
+        set head OFF
+        set lines 1000
+        set echo off
+        SELECT REFRESH_TASK_NAME||' -> '||CURRENT_STATUS||' -> '||FINAL_STATUS||' -> '||LOGFILE FROM SYSTEM.CLONE_PROCESSING_STATUS where CURRENT_STATUS='INITIATED' AND FINAL_STATUS='SUCCESS' ORDER BY TASK_ID ASC;
+EOF
+        sed -i '/^$/d' /tmp/success.tasks
+        echo -e "\033[32m$(cat /tmp/success.tasks)\033[0m"
+        echo ""
+        echo -e "\033[97m*** Failed/Inprogress Tasks: \033[0m"
+        DB_CONN_SYSTEM <<EOF > /tmp/failed.tasks
+        set feedback off pause off pagesize 0 verify off linesize 500 term off
+        col REFRESH_TASK_NAME for a30
+        col CURRENT_STATUS FOR A15
+        col CURRENT_STATUS FOR A15
+        col LOGFILE  for a75
+        set pages 80
+        set head OFF
+        set lines 1000
+        set echo off
+        SELECT REFRESH_TASK_NAME||' -> '||CURRENT_STATUS||' -> '||FINAL_STATUS||' -> '||LOGFILE FROM SYSTEM.CLONE_PROCESSING_STATUS WHERE CURRENT_STATUS='INITIATED' AND (FINAL_STATUS='FAILED' OR FINAL_STATUS IS NULL) ORDER BY TASK_ID ASC;
+EOF
+        sed -i '/^$/d' /tmp/failed.tasks
+        echo -e "\033[31m$(cat /tmp/failed.tasks)\033[0m"
+        echo ""
+        echo -e "\033[97m*** Pending Tasks: \033[0m"
+        DB_CONN_SYSTEM <<EOF > /tmp/pending.tasks
+        set feedback off pause off pagesize 0 verify off linesize 500 term off
+        col REFRESH_TASK_NAME for a30
+        col CURRENT_STATUS FOR A15
+        col CURRENT_STATUS FOR A15
+        col LOGFILE  for a75
+        set pages 80
+        set head OFF
+        set lines 1000
+        set echo off
+        SELECT  REFRESH_TASK_NAME FROM SYSTEM.CLONE_PROCESSING_STATUS WHERE CURRENT_STATUS is NULL AND FINAL_STATUS is NULL ORDER BY TASK_ID ASC;
+EOF
+        sed -i '/^$/d' /tmp/pending.tasks
+        xargs -n4 < /tmp/pending.tasks | sed 's/ /\ \ /g' | column -t -s $'\t' > /tmp/pending.tasks.temp
+        echo -e "\033[34m$(cat /tmp/pending.tasks.temp)\033[0m"
+      else
+        echo "Table CLONE_PROCESSING_STATUS does not exist in the database."
+      fi
+}

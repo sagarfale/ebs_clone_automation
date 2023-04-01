@@ -1,0 +1,42 @@
+F_CHECKING_PREVIOUS_TASKS()
+{
+        #echo "within F_CHECKING_PREVIOUS_TASKS"
+        #echo "$1"
+        output1=`DB_CONN_SYSTEM <<EOF 
+           set feedback off pause off pagesize 0 verify off linesize 500 term off
+           set pages 80
+           set head off
+           set line 120
+           set echo off
+           select CAST(task_id AS INTEGER) from CLONE_PROCESSING_STATUS where REFRESH_TASK_NAME='$1';
+EOF
+`
+        
+        output1=$(echo "$output1" | tr -d '[:space:]')
+        #echo "output1 : $output1"
+        for  i in $(seq 1 $((output1-1)))
+        do
+        #echo "$i"
+        #echo "select FINAL_STATUS from CLONE_PROCESSING_STATUS where TASK_ID="${i}";"
+           output=`DB_CONN_SYSTEM <<EOF 
+           set feedback off pause off pagesize 0 verify off linesize 500 term off
+           set pages 80
+           set head off
+           set line 120
+           set echo off
+           select FINAL_STATUS from CLONE_PROCESSING_STATUS where TASK_ID=${i};
+EOF
+`
+        output=$(echo "$output" | tr -d '[:space:]')
+        #echo "$1 is FINAL_STATUS : $FINAL_STATUS"
+        if [ "${output}" = "SUCCESS" ] || [ "${output}" = "SKIPPED" ]; then 
+            #echo "task is $i is Success"
+            continue
+        else 
+            F_CHECKING_CLONING_STATUS
+            echo ""
+            echo "Previous tasks has been failed.. check CLONE_PROCESSING_STATUS table.."
+            exit 1
+        fi
+done
+}

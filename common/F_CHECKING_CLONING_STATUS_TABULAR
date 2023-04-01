@@ -1,0 +1,49 @@
+F_CHECKING_CLONING_STATUS_TABULAR()
+{
+clear
+echo -e "\033[33m*** Display CLONE_STATUS for ${TARGET_INSTANCE_NAME}\033[0m"
+echo -e "\033[33m*** Refresh dir : ${REFRESH_DIR}/\033[0m"
+   output=`DB_CONN_SYSTEM <<EOF
+      set feedback off pause off pagesize 0 verify off linesize 500 term off
+      set pages 80
+      set head off
+      set line 100
+      set echo off
+      SELECT TABLE_NAME FROM DBA_TABLES WHERE table_name='CLONE_PROCESSING_STATUS' AND owner='SYSTEM';
+EOF
+`
+output=`echo $output|  tr -d '[:space:]'`
+echo ">>> output is $output"
+      if [ "$output" = "CLONE_PROCESSING_STATUS" ]; then
+        :<<COMMENT
+         DB_CONN_SYSTEM <<EOF
+         set feedback off pause off pagesize 0 verify off linesize 500 term off
+         col REFRESH_TASK_NAME for a30
+         col CURRENT_STATUS FOR A15
+         col FINAL_STATUS FOR A15
+         col LOGFILE  for a75
+         set pages 80
+         set head on
+         set lines 1000
+         set echo off
+         SELECT * FROM SYSTEM.CLONE_PROCESSING_STATUS;
+EOF
+COMMENT
+        DB_CONN_SYSTEM <<EOF
+         set feedback off pause off pagesize 0 verify off linesize 500 term off
+         col REFRESH_TASK_NAME for a30
+         col CURRENT_STATUS FOR A7
+         col CURRENT FOR A9
+         col FINAL FOR A7
+         col FINAL_STATUS FOR A7
+         col LOGFILE  for a80
+         set pages 80
+         set head on
+         set lines 1000
+         set echo off
+         SELECT REFRESH_TASK_NAME,CURRENT_STATUS "CURRENT", FINAL_STATUS "FINAL",REPLACE(LOGFILE, '${REFRESH_DIR}/', '') AS LOGFILE FROM SYSTEM.CLONE_PROCESSING_STATUS;
+EOF
+      else
+        echo "Table CLONE_PROCESSING_STATUS does not exist in the database."
+      fi
+}

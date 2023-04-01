@@ -1,0 +1,128 @@
+#!/bin/bash
+#####################################################################################
+##
+## Author: 				Sagar Fale
+## Creation: 			25-Mar-23
+## Usage:				adcfgclone script for R12.2
+##
+#####################################################################################
+F_ADCFGCLONE_CONFIG()
+		{
+		F_ECHO "F_ADCFGCLONE_CONFIG starts here .." 
+		INITIALIZE_TASK "$FUNCNAME"
+		F_ECHO "Creation of directories  ..." >> ${logfile}
+		## customized and env related 
+		#write/call customized function to create dirs if required creation
+		#mkdir -p /uu4001/DEBGM1/appltmp
+		#mkdir -p /ua4002/appsr12/inst/apps/DEBGM1_amr-365-dap01/appltmp/updates
+		#mkdir -p /uu4001/PEBGM1/applcsf/logs/appl/conc
+		#mkdir -p /uu4001/PEBGM1/appltmp
+		#mkdir -p /uu4001/DEBGM1/applptmp
+
+		folder=$(find /home/appldeb1 -maxdepth 1 -type d -name "refresh_files_*_run" -printf '%T@ %p\n' | sort -n | tail -1 | cut -f2- -d' ')
+		CONTEXT_FILE=`find "$folder" -name "DEBGM1_gmr-365-dap01.xml"`
+		a=`date +"%d-%m-%Y:%H:%M:%S"`
+		cp  ${CONTEXT_FILE} ${CONTEXT_FILE}_bkp_$a
+
+		F_ECHO "The CONTEXT_FILE selected for adcfgclone : ${CONTEXT_FILE}"
+		## renaming FMW_Home
+		F_ECHO "Moving old FMW Homes "
+		mv ${EBS_BASE}/fs1/FMW_Home ${EBS_BASE}/fs1/FMW_Home_bkp_$a
+		mv ${EBS_BASE}/fs2/FMW_Home ${EBS_BASE}/fs1/FMW_Home_bkp_$a
+
+		## removing oracle inventory 
+		F_ECHO "Getting ora_inv_location and deleting it"
+		ora_inv_location=`cat /etc/oraInst.loc  |grep  inventory_loc |  awk -F "=" '{print $2}'`
+		##rm -rf ora_inv_location
+
+		unset PERL5LIB
+
+		if [ ${SOURCE_MT_RUN_FS1} == "fs1" ];
+		then
+			sed -i '/^<file_edition_type oa_var="s_file_edition_type">/ s/patch/run/g' ${CONTEXT_FILE}
+			sed -i 's/fs2/fs1/g'   ${CONTEXT_FILE}
+			sed -i '/OTHER_BASE/ s/\/fs1/\/fs2/g' ${CONTEXT_FILE}
+		else
+			sed -i '/^<file_edition_type oa_var="s_file_edition_type">/ s/patch/run/g' ${CONTEXT_FILE}
+			sed -i 's/fs1/fs2/g'   ${CONTEXT_FILE}
+			sed -i '/OTHER_BASE/ s/\/fs2/\/fs1/g' ${CONTEXT_FILE}
+		fi
+
+		ls -l  ${CONTEXT_FILE}
+
+		location=$(grep -o '<COMMON_TOP oa_var="s_com">.*</COMMON_TOP>' ${CONTEXT_FILE} | sed -n 's/.*<COMMON_TOP oa_var="s_com">\(.*\)<\/COMMON_TOP>.*/\1/p')
+		cd "$location/clone/bin"
+		TEMP_LOG_LOC="$location/clone/bin"
+		## Taking backup of the context file
+		#cp  $COMMON_TOP/clone/bin/adcfgclone.pl  $COMMON_TOP/clone/bin/adcfgclone.bkp.pl
+		cp adcfgclone.pl adcfgclone.$a_bkp.pl
+		## Disabling the auto-start of the services
+		##Sagar##sed -i 's/isSkipStartingServices = "false"/isSkipStartingServices = "true"/g'   adcfgclone.bkp.pl
+
+		##creating context file for adcfgclone
+		
+		##Sagar##echo "perl adcfgclone.bkp.pl  component=appsTier context=$CONTEXT_FILE pairsfile=$pairsfile_name  addnode=no dualfs=yes <<EOF " > adcfgclone_start.sh
+		##Sagar##echo "\"\$APPS_PWD\"" >>  adcfgclone_start.sh
+		##Sagar##echo "\"\$WL_PASSWD\"" >> adcfgclone_start.sh
+		##Sagar##echo "\"\$DS_CONNECT\"" >> adcfgclone_start.sh
+		##Sagar##echo "EOF" >> adcfgclone_start.sh
+
+		##Sagar##echo "starting adcfgclone"
+
+		##Sagar##echo "mt_post_refresh_steps  ends here .." >> ${logfile}
+		F_ECHO "*** In function $FUNCNAME"
+		
+  		#LOGFILE_STAGE_NAME=${TEMP_LOG_LOC}/adcfgclone_temp
+  		 F_ECHO "LOGFILE_STAGE_NAME : $LOGFILE_STAGE_NAME"
+ 		 F_ECHO "Disabling auto start of services after ADCFGCLONE"
+	#For R12
+	 perl -pi.old -e 's/(#runPipedCmd.*adstr)/#$1/' ${ADCFGCLONE_SCRIPT}  >>$LOGFILE 2>>$LOGFILE
+	  ##For 11i
+	#  perl -pi.old -e 's/(system.*adstr)/#$1/' ${ADCFGCLONE_SCRIPT} >>$LOGFILE 2>>$LOGFILE
+	  if [ "$?" != "0" ]
+	  then
+	     f_echo "ERROR: Not able to disable autostart."
+	     exit
+	  fi
+
+
+	  F_ECHO "Preparing temporary script to run adcfgclone"
+
+
+	  cp ${REFRESH_DIR}/common/perl_sub.pl  ${TEMP_LOG_LOC}
+
+	  PERL_SCRIPT=${TEMP_LOG_LOC}/perl_temp.pl
+	  rm -f $PERL_SCRIPT
+	  if [ "$?" != "0" ]
+	  then
+	    f_echo "ERROR: Not able to delete temporary perl script $PERL_SCRIPT"
+	    exit;
+	  fi
+
+	  cat ${COMMONFILES}/perl_sub.pl  >> $PERL_SCRIPT
+	  echo "runPipedCmd(\"${ADCFGCLONE_SCRIPT} appltop $CM_NODE1_RUN_XML ${1}\", \"$APPS_PWD\" ,\"$WL_PASSWD\");" >> $PERL_SCRIPT
+	  #echo "runPipedCmd(\"${ADCFGCLONE_SCRIPT} appsTier ${1}\", \"$APPS_PWD\" ,\"$WL_PASSWD\");" >> $PERL_SCRIPT
+	  #echo "runPipedCmd(\"${ADCFGCLONE_SCRIPT} appltop ${1}\", \"$APPS_PWD\" ,\"$WL_PASSWD\");" >> $PERL_SCRIPT
+	  #echo "runPipedCmd(\"${ADCFGCLONE_SCRIPT} component=appsTier pairsfile=$HOME/DEV2EBS_extn-365-dap23_Pairs.txt dualfs=yes\", \"$WL_PASSWD\" ,\"$APPS_PWD\");" >> $PERL_SCRIPT
+
+	  chmod 755 $PERL_SCRIPT
+	  cat $PERL_SCRIPT >> $LOGFILE 2>>$LOGFILE
+
+	  F_ECHO "Running adcfgclone on AppTier"
+	  F_ECHO "You may monitor the progress in $LOGFILE_STAGE_NAME"
+
+	  /usr/bin/perl $PERL_SCRIPT  >>$LOGFILE_STAGE_NAME 2>>$LOGFILE_STAGE_NAME
+
+	     cat $LOGFILE_STAGE_NAME >> $LOGFILE
+	     grep -i "Completed Apply" $LOGFILE_STAGE_NAME >>$LOGFILE 2>>$LOGFILE
+	     if [ "$?" = "0" ]
+	     then
+	         F_ECHO "SUCCESS: ADCFGCLONE APPSTIER is completed"
+	         F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+	     else
+	         F_ECHO "ERROR: ADCFGCLONE failed on app tier."
+	         F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+	         exit
+	     fi
+	  F_ECHO "Exiting f_app_adcfgclone"
+}

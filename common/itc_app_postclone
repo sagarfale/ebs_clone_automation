@@ -1,0 +1,362 @@
+#!/bin/bash
+###############################################
+###
+### Suneel Tirunamala 01-OCT-2012 Initial Script
+###
+###
+##############################################
+
+. /shared/scripts/clone/conf/${1}_refresh.env
+
+
+function f_wf_purge
+{
+  f_echo "In function f_wf_purge"
+  f_echo "Executing $FND_TOP/patch/115/sql/wfntfqup.sql " 
+
+  TEMP_LOG_FILE=${TEMP_LOG_LOC}/wf_purge_out
+
+  rm -f ${TEMP_LOG_FILE} >>$LOG_FILE 2>>$LOG_FILE
+  if [ "$?" != "0" ] 
+  then
+     f_echo "ERROR: Not able to delete temp output file $TEMP_LOG_FILE"
+     exit
+  fi
+
+
+  APPS_PSWD=`GetPassword APPS`
+
+  f_echo "FND_TOP:$FND_TOP/patch/115/sql/wfntfqup.sql"
+  
+  sqlplus APPS/${APPS_PSWD}@${INSTANCE} @$FND_TOP/patch/115/sql/wfntfqup.sql  APPS $APPS_PSWD APPLSYS >> $TEMP_LOG_FILE 2>>$TEMP_LOG_FILE
+
+  cat ${TEMP_LOG_FILE} >> ${LOG_FILE}
+
+f_echo "Checking for errors in the SQL output file."
+
+f_echo "Checking for ORA- errors:"
+grep -i ora- ${TEMP_LOG_FILE} >> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo "ERROR: SQL Output has errors."
+   ERROR="Y"
+   exit
+else
+   f_echo "No ORA- errors."
+fi
+
+f_echo "Checking for TNS- errors:"
+grep -i tns- ${TEMP_LOG_FILE} >> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo "ERROR: SQL Output has errors."
+   ERROR="Y"
+   exit
+else
+   f_echo "No TNS- errors."
+fi
+
+f_echo "Checking for SP2- errors:"
+grep -i sp2- ${TEMP_LOG_FILE} >> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo "ERROR: SQL Output has errors."
+   ERROR="Y"
+   exit
+else
+   f_echo "No SP2- errors."
+fi
+
+
+f_echo "Checking for COMMITS"
+grep -i "Commit complete" ${TEMP_LOG_FILE} >> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo "SQL completed Successfuly."
+else
+   f_echo "ERROR:SQL OUTPUT had errors."
+   ERROR="Y"
+   exit
+fi
+
+f_echo "Exiting f_wf_purge"
+
+}
+
+  
+function f_remove_sso
+{
+
+f_echo "In Function f_remove_sso"
+
+APPS_PSWD=`GetPassword APPS`
+
+TEMP_LOG_FILE=${TEMP_LOG_LOC}/sso_remove_reference
+
+  rm -f ${TEMP_LOG_FILE} >>$LOG_FILE 2>>$LOG_FILE
+  if [ "$?" != "0" ]
+  then
+     f_echo "ERROR: Not able to delete temp output file $TEMP_LOG_FILE"
+     exit
+  fi
+
+f_echo "Exevuting txkrun to remove references"
+txkrun.pl -script=SetSSOReg -removereferences=yes  -appspass=$APPS_PSWD  >>${TEMP_LOG_FILE} 2>>${TEMP_LOG_FILE}
+
+
+cat ${TEMP_LOG_FILE} >> ${LOG_FILE}
+f_echo "Checking for errors in the remove reference log file."
+grep -i "No Errors encountered" ${TEMP_LOG_FILE} >> ${LOG_FILE} 2>> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo "Remove reference is successful."
+else
+   f_echo "ERROR: Remove reference failed."
+   exit
+fi
+
+f_echo "Exiting Function f_remove_sso"
+}
+
+function f_process_sym_links
+{
+
+  f_echo "****************************"
+  f_echo "In function f_process_sym_links"
+
+  TEMP_FILE1=${TEMP_LOG_LOC}/temp1
+  #eval "LINK=\$$1"
+  for i in $CM_LINK
+  do
+    LIST=$i
+    f_echo "Processing links for Directory $LIST "
+
+    cd $LIST >>$LOG_FILE 2>>$LOG_FILE
+    if [ "$?" != "0" ]
+    then
+        f_echo "ERROR: Not able to change directory to $LIST"
+        exit
+    fi
+
+    f_echo "Getting the link information"
+    #ls -ltr |grep lrwx | awk '{print $9 "^"  $11}' > ${TEMP_FILE1}
+    ls -ltr |grep lrwx | grep -iv ${LINSTANCE} |awk '{print $9 "^"  $11}' > ${TEMP_FILE1}
+    cat ${TEMP_FILE1} >> $LOG_FILE
+
+    f_echo "Modifying the target path for the following tokens"
+    for j in $CM_LINK_TOKEN
+    do
+      TOKEN=$j
+      f_echo "Search-Replace token: $TOKEN"
+      SEARCH_T=`echo $TOKEN | awk -F: '{print $1}'`
+      REPLACE_T=`echo $TOKEN | awk -F: '{print $2}'`
+
+      sed "s/${SEARCH_T}/${REPLACE_T}/g" ${TEMP_FILE1} > ${TEMP_FILE1}.1
+      mv ${TEMP_FILE1}.1 ${TEMP_FILE1}
+#      cat  ${TEMP_FILE1} >> $LOG_FILE
+   done
+
+   cat ${TEMP_FILE1} >> $LOG_FILE
+
+   f_echo "Recreating the symlinks"
+   while read line
+   do
+
+     LINK=`echo $line | awk -F^ '{print $1}'`
+     TARGET=`echo $line | awk -F^ '{print $2}'`
+
+     f_echo "Unlinking $LINK "
+     unlink $LINK >>$LOG_FILE 2>>$LOG_FILE
+     if [ "$?" != "0" ]
+     then
+        f_echo "ERROR: Not able to unlink $LINK in Directory $LIST"
+        exit
+     fi
+
+     ln -s ${TARGET} ${LINK} >>$LOG_FILE 2>>$LOG_FILE
+
+     if [ "$?" != "0" ]
+     then
+        f_echo "ERROR: Not able to create link for $TARGET as  $LINK in Directory $LIST"
+        exit
+     fi
+     f_echo "Created link $LINK"
+     ls -l $LINK >> $LOG_FILE 2>> $LOG_FILE
+   done < $TEMP_FILE1
+   f_echo "#########################################################"
+done
+
+f_echo "Exiting links function"
+
+}
+
+ 
+function f_process_app_cpfile
+{
+
+  f_echo "****************************"
+  f_echo "In function f_process_app_cpfile"
+
+  for i in $APP_POSTCLONE_COPY
+  do
+    LIST=$i
+    f_echo "Source:Target: $LIST"
+    SOURCE=`echo $LIST | awk -F: '{print $1}'`
+    TARGET=`echo $LIST | awk -F: '{print $2}'`
+    #f_echo "Source:$SOURCE"
+    #f_echo "TARGET:$TARGET"
+#    cp $SOURCE $TARGET >> $LOG_FILE 2>>$LOG_FILE
+    if [ "$?" != "0" ]
+    then
+        f_echo "ERROR: copy of $SOURCE TO $TARGET is not successful."
+        exit
+    fi
+    f_echo "Copied $SOURCE TO $TARGET"
+   done
+# Add Post Clone Steps -Anurag 11/23/20
+
+  for i in $APP_OHS_COPY
+  do
+    LIST=$i
+    f_echo "Source:Target: $LIST"
+    SOURCE=`echo $LIST | awk -F: '{print $1}'`
+    TARGET=`echo $LIST | awk -F: '{print $2}'`
+    #f_echo "Source:$SOURCE"
+    #f_echo "TARGET:$TARGET"
+    cp $SOURCE $TARGET >> $LOG_FILE 2>>$LOG_FILE
+    if [ "$?" != "0" ]
+    then
+        f_echo "ERROR: copy of $SOURCE TO $TARGET is not successful."
+        exit
+    fi
+    f_echo "Copied $SOURCE TO $TARGET"
+   done
+
+   f_echo "Files have been created."
+   f_echo "Exiting function f_process_app_cpfile"
+}
+
+function f_update_heap
+{
+  f_echo "In function f_update_heap"
+  f_echo "Processing fs1"
+
+  cp ${appltop}/APPS/fs1/FMW_Home/user_projects/domains/EBS_domain/config/config.xml ${appltop}/APPS/fs1/FMW_Home/user_projects/domains/EBS_domain/config/config.xml.1
+
+  sed -i ':1;s/-Xms1024m\(.*oacore_server\)/-Xms2048m\1/;t1'  ${appltop}/APPS/fs1/FMW_Home/user_projects/domains/EBS_domain/config/config.xml >> $LOG_FILE 2>> $LOG_FILE
+  if [ "$?" != "0" ]
+  then
+    f_echo "ERROR: Not able to update XMS in ${appltop}/APPS/fs1/FMW_Home/user_projects/domains/EBS_domain/config/config.xml"
+    exit;
+  fi
+
+ sed -i ':1;s/-Xmx1024m\(.*oacore_server\)/-Xmx2048m\1/;t1' ${appltop}/APPS/fs1/FMW_Home/user_projects/domains/EBS_domain/config/config.xml >> $LOG_FILE 2>> $LOG_FILE
+  if [ "$?" != "0" ]
+  then
+    f_echo "ERROR: Not able to update XMX in ${appltop}/APPS/fs1/FMW_Home/user_projects/domains/EBS_domain/config/config.xml"
+    exit;
+  fi
+
+  f_echo "Processed fs1"
+  f_echo "Processing fs2"
+
+  cp ${appltop}/APPS/fs2/FMW_Home/user_projects/domains/EBS_domain/config/config.xml ${appltop}/APPS/fs2/FMW_Home/user_projects/domains/EBS_domain/config/config.xml.1
+
+  sed -i ':1;s/-Xms1024m\(.*oacore_server\)/-Xms2048m\1/;t1'  ${appltop}/APPS/fs2/FMW_Home/user_projects/domains/EBS_domain/config/config.xml >> $LOG_FILE 2>> $LOG_FILE
+  if [ "$?" != "0" ]
+  then
+    f_echo "ERROR: Not able to update XMS in ${appltop}/APPS/fs2/FMW_Home/user_projects/domains/EBS_domain/config/config.xml"
+    exit;
+  fi
+
+ sed -i ':1;s/-Xmx1024m\(.*oacore_server\)/-Xmx2048m\1/;t1' ${appltop}/APPS/fs2/FMW_Home/user_projects/domains/EBS_domain/config/config.xml >> $LOG_FILE 2>> $LOG_FILE
+  if [ "$?" != "0" ]
+  then
+    f_echo "ERROR: Not able to update XMX in ${appltop}/APPS/fs2/FMW_Home/user_projects/domains/EBS_domain/config/config.xml"
+    exit;
+  fi
+
+ f_echo "Processed fs2"
+}
+function f_post_clone
+{
+  f_echo "In function f_post_clone"
+  f_echo "Processing fs1"
+  echo "Here in f_post_clone Anurag"
+APPSPWD=`GetPassword APPS`
+  f_echo "$APPSPWD" "AppsPwd"
+BOLIFPWD=`GetPassword BOLINF`
+  f_echo "$BOLIFPWD" "Bolifpwd"
+  f_echo "$POSTCLONE_NOHUP_SH $APPSPWD $BOLIFPWD"
+  echo "Here in f_post_clone before scramble $POSTCLONE_USER_SH"
+# Pls uncomment here during run
+sh $POSTCLONE_USER_SH  >>$LOG_FILE 2>>$LOG_FILE
+  echo "Here in f_post_clone before scramble $POSTCLONE_NOHUP_SH" $APPSPWD $BOLIFPWD
+#export APPSPWD="PFV7yLB8of"
+#export BOLIFPWD="T_A6_RH7pc"
+sh $POSTCLONE_NOHUP_SH $APPSPWD $BOLIFPWD>> $LOG_FILE 2>>$LOG_FILE
+echo " Interface home " $INTERFACE_HOME  $APPSPWD
+sh /interface/j_wwya/WWYAEBSTS8/Files/EmailandDataScramble/ITC_INTERFACE_LDT.sh $APPSPWD ${INTERFACE_HOME}>> $LOG_FILE 2>>$LOG_FILE
+}
+function f_fsclone
+{
+  f_echo "In function f_fsclone"
+  f_echo "Processing fs1"
+SYSTEM_PSWD=`GetPassword SYSTEM`
+APPS_PSWD=`GetPassword APPS`
+WL_PSWD=`GetPassword WEBLOGIC`
+ { echo ${APPS_PSWD}; echo ${SYSTEM_PSWD}; echo ${WL_PSWD} ;}| /u01/install/APPS/fs_ne/EBSapps/appl/ad/bin/adop phase=fs_clone force=yes
+}
+
+##Main
+
+f_echo "Starting $0 with $@ Arguments."
+
+rm -f ${APP_CUSTOM_SETUP_SUCCESS}
+
+f_check_run_fs
+. $CM_NODE1_ENV_FILE
+f_echo "Executing workfclone sql scripts."
+
+#f_wf_purge
+
+#f_remove_sso
+#f_process_sym_links
+
+#f_echo "Copying Discoverer dbc file"
+#scp ${RUN_FND_SECURE}/${INSTANCE}.dbc ${DISCO_SERVER}:${DISCO_DIR}/${INSTANCE}.dbc
+#scp ${RUN_FND_SECURE}/${INSTANCE}.dbc ${DISCO_SERVER}:${DISCO_DIR}/${LINSTANCE}.dbc
+
+f_echo "Skipping Copying Instance specific files"
+f_echo "Run Post Clone Shell Script" $SSH $CM_SOURCE  $POSTCLONE_USER_SH
+#f_process_app_cpfile
+#sh $SSH $CM_SOURCE  $POSTCLONE_USER_SH  >>$LOG_FILE 2>>${TEMP_LOG_LOC}/err_out
+f_echo "Updating Postclone"
+. $CM_NODE1_ENV_FILE
+f_post_clone
+#f_fsclone
+
+f_echo "Updating oacore heap"
+#f_update_heap
+
+#f_echo "Setting up Vertex"
+#rm -f ${TEMP_LOG_LOC}/VERTEXT_SETUP_SUCCESS
+#f_echo "ssh ${VUSER}@$VSERVER /scripts/clone/bin/itc_vertex_setup $LINSTANCE"
+#ssh ${VUSER}@$VSERVER /scripts/clone/bin/itc_vertex_setup $LINSTANCE >>$LOG_FILE 2>>$LOG_FILE
+#if [ -f ${TEMP_LOG_LOC}/VERTEXT_SETUP_SUCCESS ]
+#then
+#   f_echo "SUCCESS: Vertex setup is completed"
+#else
+#   f_echo "ERROR: Vertex setup failed."
+#   exit
+#fi
+
+
+f_echo "Creating Success flag file "
+touch ${APP_CUSTOM_SETUP_SUCCESS}
+   if [ "$?" != "0" ]
+   then
+      f_echo "ERROR: Not able to create success flag file ${APP_CUSTOM_SETUP_SUCCESS}"
+      f_echo "Exiting $0"
+   fi
+sleep 20

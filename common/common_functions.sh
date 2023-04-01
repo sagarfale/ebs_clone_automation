@@ -1,0 +1,487 @@
+## Author : Sagar Fale
+
+alias DB_CONN_SYSTEM='sqlplus -s ${TARGET_DB_SYSTEM_USERNAME}/${TARGET_DB_SYSTEM_PASSWORD}@//${TARGET_DB_HOST}:${TARGET_DB_PORT}/${TARGET_DB_SID}'
+alias DB_CONN_APPS='sqlplus -s ${TARGET_DB_APPS_USERNAME}/${TARGET_DB_APPS_PASSWORD}@//${TARGET_DB_HOST}:${TARGET_DB_PORT}/${TARGET_DB_SID}'
+
+LOGFILE="${REFRESH_DIR}/log/${TARGET_INSTANCE_NAME}/${TARGET_INSTANCE_NAME}_MAIN_REFRESH_$(date +%Y-%m-%d_%H-%M-%S).log"
+
+LOGFILE_STAGE()
+{ 
+    echo "${REFRESH_DIR}/log/${TARGET_INSTANCE_NAME}/$1/${TARGET_INSTANCE_NAME}_$(date +%Y-%m-%d_%H-%M-%S).log"
+}
+
+F_ECHO() { echo "[`hostname`][`date +'%m-%d-%Y'` `date +'%T'`]$@" >> ${LOGFILE}; }
+F_ECHO_STAGE() { echo "[`hostname`][`date +'%m-%d-%Y'` `date +'%T'`]$@" >> ${LOGFILE_STAGE_NAME}; }
+
+function EXTRACT_LOG_VALUE { local LOGFILE_STAGE_NAME=$1; LOGFILE_STAGE_NAME_EXTRACT=${LOGFILE_STAGE_NAME#*/log/}; echo "$LOGFILE_STAGE_NAME_EXTRACT"; }
+
+INITIALIZE_TASK() 
+{
+    TEMP_TASK_NAME="${1#F_}"
+    F_UPDATE_CLONE_PROCESSING_STATUS_INITIALIZE_TASK "$TEMP_TASK_NAME"
+    F_CHECKING_PREVIOUS_TASKS "$TEMP_TASK_NAME"
+    LOGFILE_STAGE_NAME=$(LOGFILE_STAGE "$1")
+}
+
+F_EBS_RELEASE_VERSION()
+{
+    echo "calling from F_EBS_RELEASE_VERSION"
+    EBS_RELEASE=$(DB_CONN_APPS <<EOF
+        set feedback off pause off pagesize 0 verify off linesize 500 term off
+        col REFRESH_TASK_NAME for a50
+        col FINAL_STATUS for a10
+        set pages 80
+        set head off
+        set line 120
+        set echo off
+        SELECT SUBSTR(RELEASE_NAME,1,4) AS EBS_VERSION FROM FND_PRODUCT_GROUPS;
+EOF
+    )
+    EBS_RELEASE=$(echo $EBS_RELEASE | tr -d '[:space:]\n')
+    echo "$EBS_RELEASE"
+    [[ $EBS_RELEASE == 11* || $EBS_RELEASE == 12* ]] || { F_ECHO "EBS_RELEASE does not start with 11 or 12. Exiting script."; exit 1; }
+    
+}
+
+F_DB_LISTENER_STATUS()
+{
+    INITIALIZE_TASK "$FUNCNAME"
+    tnsping_output=$(tnsping $TARGET_INSTANCE_NAME)
+    if echo $tnsping_output | grep -q "OK"; then
+        F_ECHO "***  $FUNCNAME .. SUCCESS"
+        F_ECHO_STAGE "*** $tnsping_output" 
+        F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+    else
+        F_ECHO "*** $FUNCNAME .. FAILED"
+        F_ECHO_STAGE "*** $tnsping_output" 
+        DEBUG_MESSEGE="DB Tnsping Failed.. check if Listener is running and connection entry is fine."
+        F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+    fi
+}
+
+F_MT_TNSPING_STATUS()
+{
+    INITIALIZE_TASK "$FUNCNAME"
+    tnsping_output=$(tnsping $TARGET_INSTANCE_NAME)
+    if echo $tnsping_output | grep -q "OK"; then
+        F_ECHO "***  $FUNCNAME .. SUCCESS"
+        F_ECHO_STAGE "*** $tnsping_output" 
+        F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+    else
+        F_ECHO "*** $FUNCNAME .. FAILED"
+        F_ECHO_STAGE "*** $tnsping_output" 
+        DEBUG_MESSEGE="DB Tnsping Failed.. check if Listener is running and connection entry is fine."
+        F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+    fi
+}
+F_DB_PRECLONE_ON_DBTIER()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_MT_PRECLONE_ON_APPS_TIER()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_MT_STOPALL_APPS_TIER()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_DB_CONFIG_BACKUP()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_DB_CONFIG_BACKUP_CUSTOM()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_APPS_CONFIG_BACKUP()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_CUSTOM_SCHEMA_BACKUP_DBTIER()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_RSYNC_INITIATED()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_RSYNC_COMPLETED()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_FND_NODES_CLEAN()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_UL_FILES_SYNC_ON_DBTIER()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_CREATE_CHECK_DB_DIR()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_DB_AUTCONFIG()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_ADCFGCLONE_CONFIG()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_APPS_AUTCONFIG()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_DB_SYS_SYSTEM_PASS_CHANGE()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_FNDCPPASS_APPS()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_UPDATE_CM_NODE_INFO()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_REDUCE_CM()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_RUN_CMCLEAN()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_STAR_EBS_ADMIN_TIER()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          
+}
+F_UPDATE_STAND_PROFILE_OPTIONS()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_UPDATE_PROFILE_OPTIONS()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_VERIFY_OPTIONS_OPTIONS()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_CANC_SHEDULED_NON_MAIN_CM_REQ()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_PLACE_JOBS_ON_HOLD()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_UPDATE_SITE_NAME()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_SET_PERMISSIONS_DIRS()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_UPDATED_WF_ADMIN_XML_FILE()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_UPDATE_WF_OVERRIDE_ADDRESS()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_VERIFICATION_OF_SMTP_HOST()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_PSD_DOWNLOAD_BUNDLE_MANUAL()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_CREATION_OF_SOFT_LINKS()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+F_AUTOMATED_SANITY_CHECKS()
+{
+          INITIALIZE_TASK "$FUNCNAME"
+          F_ECHO "INFO : Starting stage ${FUNCNAME}"
+          F_ECHO_STAGE "INFO : Checking ${FUNCNAME} and its stage"
+          #SUCCESS
+          DEBUG_MESSEGE="Completion Success Info from ${TEMP_TASK_NAME}"
+          F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+          #FAILED
+          DEBUG_MESSEGE="ORA-XXX errors from ${TEMP_TASK_NAME}"
+          #F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+}
+
+

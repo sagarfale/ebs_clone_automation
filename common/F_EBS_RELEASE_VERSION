@@ -1,0 +1,19 @@
+F_EBS_RELEASE_VERSION()
+{
+    echo "calling from F_EBS_RELEASE_VERSION"
+    EBS_RELEASE=$(DB_CONN_APPS <<EOF
+        set feedback off pause off pagesize 0 verify off linesize 500 term off
+        col REFRESH_TASK_NAME for a50
+        col FINAL_STATUS for a10
+        set pages 80
+        set head off
+        set line 120
+        set echo off
+        SELECT SUBSTR(RELEASE_NAME,1,4) AS EBS_VERSION FROM FND_PRODUCT_GROUPS;
+EOF
+    )
+    EBS_RELEASE=$(echo $EBS_RELEASE | tr -d '[:space:]\n')
+    echo "$EBS_RELEASE"
+    [[ $EBS_RELEASE == 11* || $EBS_RELEASE == 12* ]] || { F_ECHO "EBS_RELEASE does not start with 11 or 12. Exiting script."; exit 1; }
+    
+}

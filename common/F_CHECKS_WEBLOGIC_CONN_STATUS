@@ -1,0 +1,27 @@
+F_CHECKS_WEBLOGIC_CONN_STATUS()
+{
+        echo $EBS_RELEASE
+        DOMAIN=$(hostname | cut -d. -f2-)
+        TEMPFILE="${WORKFLOW}/wlst_conn.py"
+        echo "TEMPFILE : $TEMPFILE"
+        WEBLOGIC_ADMIN_HOST=`grep -i "s_wls_admin_host" $CONTEXT_FILE | cut -d">" -f2 | cut -d"<" -f1`
+        WEBLOGIC_EBS_USERNAME=`grep -i "s_wls_admin_user" $CONTEXT_FILE | cut -d">" -f2 | cut -d"<" -f1`
+        WEBLOGIC_ADMIN_PORT=`grep wls_adminport $CONTEXT_FILE | sed -n 's/.*>\(.*\)<\/wls_adminport>/\1/p'`
+        echo "adminUsername = '${WEBLOGIC_EBS_USERNAME}'" > ${TEMPFILE}
+        echo "adminPassword = '${WEBLOGIC_EBS_PASSWORD}'" >> ${TEMPFILE}      
+        echo "adminURL = 't3://${WEBLOGIC_ADMIN_HOST}.${DOMAIN}:${WEBLOGIC_ADMIN_PORT}'" >> ${TEMPFILE}
+        echo "connect(adminUsername,adminPassword,adminURL)
+        domainRuntime()
+        cd('ServerRuntimes')
+        servers=domainRuntimeService.getServerRuntimes()
+        for server in servers:
+            currenthost = server.getListenAddress()
+            currentState = server.getHealthState()
+            print currenthost,currentState
+        exit()" >> ${TEMPFILE}  
+        cd $FMW_HOME/user_projects/domains/EBS_domain*/bin/
+        pwd
+        . ./setDomainEnv.sh
+        java weblogic.WLST ${TEMPFILE} > ${TEMPFILE}.temp
+        grep -i ServerRuntime ${TEMPFILE}.temp | grep "MBean\|State" ${TEMPFILE}.temp | awk -F'[,:]' '{ if ($4 != "") printf("%-20s\t\t\t\t%s\n", $6, $4=="HEALTH_OK"? "\033[32m: OK\033[0m" : "\033[31m"$4"\033[0m") }' | sort
+}

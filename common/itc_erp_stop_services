@@ -1,0 +1,228 @@
+#!/bin/bash
+#################################
+## This scripts stops all services .
+##
+## Suneel Tirunamala  05/10/2012 Initial Script Template
+##
+##
+## Argument 1: <lower instancename > {MANDATORY}
+## Argument 2: This should not be used at all. This argument is 
+## required for script execution.
+##
+################################
+
+. /shared/scripts/clone/conf/${1}_refresh.env
+
+function f_stop_app
+{
+
+f_echo "*****************************"
+f_echo "In function f_stop_app"
+
+
+f_echo "Starting the Processes using adstrtal.sh"
+
+f_echo "Preparing temporary script to stop services"
+PERL_SCRIPT=${TEMP_LOG_LOC}/perl_temp.pl
+rm -f $PERL_SCRIPT $TEMP_FILE
+if [ "$?" != "0" ]
+then
+    f_echo "ERROR: Not able to delete temporary perl script $PERL_SCRIPT or $TEMP_FILE"
+    exit;
+fi
+
+cat ${COMMONFILES}/perl_sub.pl  >> $PERL_SCRIPT
+echo "runPipedCmd(\"${1} \", \"APPS\",\"$APPS_PSWD\", \"$WL_PASSWD\"  );" >> $PERL_SCRIPT
+
+chmod 755 $PERL_SCRIPT
+cat $PERL_SCRIPT >> $LOG_FILE 2>>$LOG_FILE
+
+f_echo "Stopping services    "
+f_echo "You may monitor the progress in $TEMP_FILE"
+
+/usr/bin/perl $PERL_SCRIPT  >>$TEMP_FILE 2>>$TEMP_FILE
+
+cat ${TEMP_FILE} >> ${LOG_FILE}
+
+
+f_echo "Checking and killing any processes running by $APUSER "
+echo "" > ${TEMP_LOG_FILE} 2>> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo ""
+else
+   f_echo "ERROR: Not able to create temp file ${TEMP_LOG_FILE}"
+   ERROR="Y"
+   return
+fi
+
+echo "" > ${TEMP_KILL_FILE} 2>> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo ""
+else
+   f_echo "ERROR: Not able to create temp file ${TEMP_KILL_FILE}"
+   ERROR="Y"
+   return
+fi
+
+APPSPID=`ps -fu ${APUSER} |  grep -v ssh | grep -v stop | awk  '{print $2}' | grep -v PID | wc -l`
+f_echo "$APPSPID"
+
+if [ $APPSPID -gt 0 ]
+then
+  f_echo "Processes found. Trying to kill them."
+  f_echo "ps -fu $APUSER |  awk '{print \$1, \$2}' |grep -v PID"
+  ps -fu $APUSER |  grep -v ssh | grep -v stop |awk '{print $1, $2}' |grep -v PID > ${TEMP_LOG_FILE}  2>> ${LOG_FILE}
+  cat ${TEMP_LOG_FILE} >> ${LOG_FILE}
+  sed -e "s/${APUSER}/kill -9/g"  ${TEMP_LOG_FILE}  > ${TEMP_KILL_FILE}  2>> ${LOG_FILE}
+  cat ${TEMP_KILL_FILE} 1>> ${LOG_FILE}
+  chmod +x ${TEMP_KILL_FILE} 1>> /dev/null 2>>/dev/null
+  sh ${TEMP_KILL_FILE} 1>> ${LOG_FILE} 2>>${LOG_FILE}
+else
+f_echo "There are no process running"
+fi
+
+#APPSPID=`ps -fu ${APUSER} |grep -v ssh | grep -v stop | awk  '{print $2}' | grep -v PID | wc -l`
+#if [ $APPSPID -gt 1 ]
+#then
+#   f_echo "ERROR:There are process running still."
+#   f_echo "ERROR:Please review and kill the processes and rerun the script."
+#   ERROR="Y"
+#else
+#   f_echo "SUCCESS: All processes of $APUSER are killed / stopped successfully."
+#fi
+
+f_echo "Exiting from function f_stop_app"
+f_echo "*********************************" 
+  
+}
+
+function f_stop_db
+{
+
+f_echo "*****************************"
+f_echo "In function f_stop_db"
+
+f_echo "Stopping the database."
+echo "" > ${TEMP_LOG_FILE} 2>> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo ""
+else
+   f_echo "ERROR: Not able to create temp file."
+   ERROR="Y"
+   return
+fi
+
+sqlplus -s /nolog  @${COMMONFILES}/shutdown.sql >> ${TEMP_LOG_FILE} 2>>${TEMP_LOG_FILE}
+
+cat ${TEMP_LOG_FILE} >> ${LOG_FILE}
+
+f_echo "grep ORACLE instance shut down ${TEMP_LOG_FILE}" >> ${LOG_FILE}
+grep -i "ORACLE instance shut down" ${TEMP_LOG_FILE} >> ${LOG_FILE} 2>> ${LOG_FILE}
+if [ "$?" = "0" ]
+then
+   f_echo "$INSTANCE database is shutdown."
+else
+   f_echo "ERROR: $INSTANCE database is not shutdown"
+   exit
+fi
+
+${DB_ORACLE_HOME}/bin/lsnrctl stop ${INSTANCE} >>$LOG_FILE 2>>$LOG_FILE
+
+f_echo "Exiting from function f_stop_db"
+f_echo "*********************************"
+
+}
+
+#Main 
+
+ERROR="N"
+f_check_run_fs
+APPS_PSWD=`GetPassword APPS`
+WL_PASSWD=`GetPassword WEBLOGIC`
+
+
+TEMP_LOG_FILE=${TEMP_LOG_LOC}/stop_services
+TEMP_KILL_FILE=${TEMP_LOG_LOC}/kill_session
+
+touch $TEMP_LOG_FILE $TEMP_KILL_FILE >/dev/null 2>/dev/null
+chmod 777 $TEMP_LOG_FILE
+chmod 777 $TEMP_KILL_FILE
+
+f_echo "Started $0 Arguments: $@"
+
+rm -f ${TEMP_LOG_LOC}/*STOP* >> $LOG_FILE 2>>$LOG_FILE
+if [ "$?" != "0" ]
+then
+   f_echo "Not able to clear the temp files in $TEMP_LOG_LOC"
+   exit;
+fi
+
+
+if [ "$#" = "1" ]
+then
+ f_echo "Stopping services on CM NODES"
+
+ for i in $NODE_STOP_DIR
+ do
+  NODE=`echo $i | awk -F: '{print $1}'`
+  STOP_SCR=`echo $i | awk -F: '{print $2}'`
+  ENV_FILE=`echo $i | awk -F: '{print $3}'`
+  f_echo "Trying to stop proccess on $i "
+  f_echo "$SSH ${APUSER}/$NODE $STOP_SERVICES_SCRIPT ${LINSTANCE} $STOP_SCR $NODE $ENV_FILE "
+  $SSH ${APUSER}@$NODE $STOP_SERVICES_SCRIPT ${LINSTANCE} $STOP_SCR $NODE $ENV_FILE >>$LOG_FILE 2>>$LOG_FILE
+  sleep 10
+  if [ -f ${TEMP_LOG_LOC}/${NODE}_STOP_SERVICES_SUCCESS ]
+  then
+     f_echo "SUCCESS: Services on $NODE are stopped successfully."
+  else
+     f_echo "ERROR: Services on $NODE are not stopped."
+     f_echo "ERROR: Please review the log and process and rerun the script."
+     exit
+   fi
+ done
+
+ f_echo "Stopping services on DB  Node"
+ ERROR="N"
+ f_stop_db
+ if [ "$ERROR" = "N" ]
+ then
+     f_echo "SUCCESS: Services are stopped successfully."
+     touch ${STOP_SERVICES_SUCCESS}
+ else
+     f_echo "ERROR: Services on DB are not stopped."
+     f_echo "ERROR: Please review the log and process and rerun the script."
+     exit
+ fi
+elif [ "$#" = "4" ]
+then
+  . ${4}
+  
+  ERROR="N"
+  f_stop_app $2
+  if [ "$ERROR" = "N" ]
+  then
+    f_echo "SUCCESS: Services on `hostname` stopped successfully."
+    f_echo "Trying to create the success flag file."
+
+   touch  ${TEMP_LOG_LOC}/${3}_STOP_SERVICES_SUCCESS
+   if [ "$?" != "0" ]
+   then
+      f_echo "ERROR: Not able to create success flag file ${TEMP_LOG_LOC}/${3}_STOP_SERVICES_SUCCESS"
+      f_echo "Exiting $0"
+   fi
+  else
+    f_echo "ERROR: Services on `hostname` are not stopped successfully."
+  fi
+  rm -f $TEMP_FILE 
+   
+fi
+
+rm -f $TEMP_FILE
+
+f_echo "Completed $0"
+
+exit
+

@@ -1,0 +1,16 @@
+F_DB_TNSPING_STATUS()
+{
+    INITIALIZE_TASK "$FUNCNAME"
+    tnsping_output=$(tnsping $TARGET_INSTANCE_NAME)
+    #LOGFILE_STAGE_NAME_EXTRACT=$(EXTRACT_LOG_VALUE "${LOGFILE_STAGE_NAME}")
+    if echo $tnsping_output | grep -q "OK"; then
+        F_ECHO "***  $FUNCNAME .. SUCCESS"
+        F_ECHO_STAGE "*** $tnsping_output" 
+        F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "SUCCESS" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+    else
+        F_ECHO "*** $FUNCNAME .. FAILED"
+        F_ECHO_STAGE "*** $tnsping_output" 
+        DEBUG_MESSEGE="DB Tnsping Failed.. check if Listener is running and connection entry is fine."
+        F_UPDATE_CLONE_PROCESSING_STATUS "INITIATED" "FAILED" "$LOGFILE_STAGE_NAME" "${TEMP_TASK_NAME}" "${DEBUG_MESSEGE}"
+    fi
+}
